@@ -3,105 +3,6 @@ App::uses('BindableBehavior', 'Filebinder.Model/Behavior');
 
 class ImageBindableBehavior extends BindableBehavior {
 
-    protected $orgData;
-
-    /**
-     * beforeSave
-     *
-     * @param $model
-     * @return
-     */
-    public function beforeSave(Model $model) {
-        $modelName = $model->alias;
-        $this->orgData = $model->data;
-        $model->bindedData = $model->data;
-        foreach ($model->data[$modelName] as $fieldName => $value) {
-            if (!in_array($fieldName, Set::extract('/field', $model->bindFields))) {
-                continue;
-            }
-
-            if (empty($value) || empty($value['tmp_bind_path'])) {
-                unset($model->data[$modelName][$fieldName]);
-                continue;
-            }
-
-            if (empty($value['file_size'])) {
-                $model->data[$modelName][$fieldName] = null;
-                $model->invalidate($fieldName, __('Validation Error: File Upload Error', true));
-                return false;
-            }
-
-            $bind = $value;
-            $bind['model'] = $modelName;
-            $bind['model_id'] = 0;
-
-            $tmpFile = $value['tmp_bind_path'];
-            if (file_exists($tmpFile) && is_file($tmpFile)) {
-                /**
-                 * beforeAttach
-                 */
-                if (!empty($this->settings[$model->alias]['beforeAttach'])) {
-                    $res = $this->_userfunc($model, $this->settings[$model->alias]['beforeAttach'], array($tmpFile));
-
-                    // ここからImagebinder独自処理
-                    // beforeAttachで変換した画像情報で上書く処理
-                    if (is_array($res)) {
-                        if (!$res['result']) {
-                            return false;
-                        }
-
-                        if (isset($res['tmp_bind_path'])) {
-                            $tmpFile = $res['tmp_bind_path'];
-                            $bind['tmp_bind_path'] = $tmpFile;
-                            $model->bindedData[$modelName][$fieldName]['tmp_bind_path'] = $tmpFile;
-                        }
-                        if (isset($res['extention'])) {
-                            $tmpData = pathinfo($bind['file_name']);
-                            $bind['file_name'] = $tmpData['filename'] .
-                                '.' . $res['extention'];
-                            $model->bindedData[$modelName][$fieldName]['file_name'] = $bind['file_name'];
-                            $tmpData = null;
-                        }
-                        if (isset($res['file_size'])) {
-                            $bind['file_size'] = $res['file_size'];
-                            $model->bindedData[$modelName][$fieldName]['file_size'] = $res['file_size'];
-                        }
-                        if (isset($res['file_content_type'])) {
-                            $bind['file_content_type'] = $res['file_content_type'];
-                            $model->bindedData[$modelName][$fieldName]['file_content_type'] = $res['file_content_type'];
-                        }
-
-                    } else if (!$res) {
-                        return false;
-                    }
-                    // ここまでImagebinder独自処理
-                }
-
-                /**
-                 * Database storage
-                 */
-                $dbStorage = in_array(BindableBehavior::STORAGE_DB, (array)$this->settings[$model->alias]['storage']);
-                // backward compatible
-                if (isset($this->settings[$model->alias]['dbStorage'])) {
-                    $dbStorage = $this->settings[$model->alias]['dbStorage'];
-                }
-                if ($dbStorage) {
-                    $bind['file_object'] = base64_encode(file_get_contents($tmpFile));
-                }
-            }
-
-            $this->runtime[$model->alias]['bindedModel']->create();
-            if (!$data = $this->runtime[$model->alias]['bindedModel']->save($bind)) {
-                return false;
-            }
-
-            $bind_id = $this->runtime[$model->alias]['bindedModel']->getLastInsertId();
-            unset($model->data[$modelName][$fieldName]);
-            $model->bindedData[$modelName][$fieldName] = $data[$this->runtime[$model->alias]['bindedModel']->alias] + array($this->runtime[$model->alias]['bindedModel']->primaryKey => $bind_id);
-        }
-
-        return true;
-    }
 
     public function afterSave(Model $model, $created)
     {
@@ -248,43 +149,32 @@ class ImageBindableBehavior extends BindableBehavior {
                         return false;
                     }
                 }
+
+                /**
+                 * afterSave
+                 */
+                if (!empty($this->settings[$model->alias]['afterSave'])) {
+                    $res = $this->_userfunc($model, $this->settings[$model->alias]['afterSave'], array($tmpFile, $filePath, $bind));
+                    if (!$res) {
+                        @unlink($tmpFile);
+                        return false;
+                    }
+                }
             }
             @unlink($tmpFile);
         }
 
-        // ここからImagebinder独自処理
-        // 元ファイルも保存
-        foreach ($this->orgData[$modelName] as $fieldName => $value) {
-            if (!in_array($fieldName, Set::extract('/field', $model->bindFields))) {
-                continue;
-            }
-            $tmpFile = $value['tmp_bind_path'];
-            if (file_exists($tmpFile) && is_file($tmpFile)) {
+    }
 
-                if ($filePath) {
-                    $currentMask = umask();
-                    umask(0);
-                    if (!is_dir(dirname($filePath))) {
-                        mkdir(dirname($filePath), $this->settings[$model->alias]['dirMode'], true);
-                    }
-
-
-                    $fileData = pathinfo($tmpFile);
-
-                    $fileName = Configure::read('Imagebinder.originalFilename')
-                        ? Configure::read('Imagebinder.originalFilename') . '.' . $fileData['extension']
-                        : $value['file_name'];
-                    $targetFile = dirname($filePath) . DS .  $fileName;
-                    if (!copy($tmpFile, $targetFile) || !chmod($targetFile, $this->settings[$model->alias]['fileMode'])) {
-                        @unlink($tmpFile);
-                        umask($currentMask);
-                        return false;
-                    }
-                    umask($currentMask);
-                }
-                @unlink($tmpFile);
-            }
+    /**
+     * 保存処理
+     */
+    public function runtimeSave(Model $model, $bind)
+    {
+        $this->runtime[$model->alias]['bindedModel']->create();
+        if (!$this->runtime[$model->alias]['bindedModel']->save($bind)) {
+            return false;
         }
-        // ここまでImagebinder独自処理
+        return true;
     }
 }
