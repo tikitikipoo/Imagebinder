@@ -19,7 +19,7 @@ class ImagebinderController extends FilebinderController {
      * @return
      */
     public function loader($model = null, $model_id = null, $fieldName = null, $fileName = null){
-        
+
         $this->layout = false;
         $this->autoRender = false;
         Configure::write('debug', 0);
@@ -31,11 +31,11 @@ class ImagebinderController extends FilebinderController {
         $key = $this->request->query['key'];
         $expire = $this->request->query['expire'];
 
-        if ($expire < time()) {
-            throw new NotFoundException(__('Invalid access'));
-            return;
-        }
-        
+//        if ($expire < time()) {
+//            throw new NotFoundException(__('Invalid access'));
+//            return;
+//        }
+
         $secret = $this->Session->read('Filebinder.secret');
 
         if (Security::hash($model . $model_id . $fieldName . $secret . $expire) !== $key) {
@@ -92,7 +92,7 @@ class ImagebinderController extends FilebinderController {
             } elseif ( isset($this->request->params['named']['height']) ) {
                 $height = $this->request->params['named']['height'];
             }
-            
+
             // $width/$heightが整数かどうかのチェック
             if (!preg_match('/^0$|^-?[1-9][0-9]*$/', $width) ) {
                 $width = false;
@@ -100,7 +100,7 @@ class ImagebinderController extends FilebinderController {
             if (!preg_match('/^0$|^-?[1-9][0-9]*$/', $height) ) {
                 $height = false;
             }
-            
+
             if ( $width !== false || $height !== false ) {
                 $originalFile = new File($filePath);
 
@@ -113,7 +113,7 @@ class ImagebinderController extends FilebinderController {
                     $p .= 'h'.$height;
                 }
                 $thumbnail = $originalFile->Folder->pwd().DS.$p.DS.$originalFile->name;
-                
+
                 // thumbnailが存在しなかったら生成
                 if ( !file_exists($thumbnail) ) {
 
@@ -123,7 +123,7 @@ class ImagebinderController extends FilebinderController {
 
                     // リサイズ
                     ImageMake::resize($thumbnailFile->path, $width, $height);
-                    
+
                     // filesize関数のキャッシュをクリアする
                     clearstatcache();
                 }
@@ -132,7 +132,7 @@ class ImagebinderController extends FilebinderController {
                 $filePath = $thumbnail;
             }
         }
-        
+
 //        if (strstr(env('HTTP_USER_AGENT'), 'MSIE')) {
 //            $fileName = mb_convert_encoding($fileName,  "SJIS", "UTF-8");
 //            header('Content-Disposition: inline; filename="'. $fileName .'"');
